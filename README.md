@@ -8,3 +8,6 @@ npm run start
 ```bash
 npm run build
 ```
+
+### AI快速实现自动模板
+目前做了claude code的context工程，可以在项目下直接使用claude code的/create来新建字段模板
