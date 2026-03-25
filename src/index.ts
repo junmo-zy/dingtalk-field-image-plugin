@@ -64,6 +64,16 @@ fieldDecoratorKit.setDecorator({
       'resolutionLabel': '分辨率',
       'authorizationName': 'AIFY API 授权',
       'authorizationTooltip': '请访问 https://aivip.link/dashboard/apikey 查看或生成您的 API Key。',
+      'err_fetch': '网络请求失败，请检查网络后重试',
+      'err_content': '内容审核未通过，请修改提示词后重试',
+      'err_service': 'AI 服务调用失败，请稍后重试',
+      'err_empty': '服务返回数据为空，请稍后重试',
+      'err_generate': '图片生成失败，请修改提示词后重试',
+      'err_no_task': '任务创建失败，请稍后重试',
+      'err_no_url': '图片地址获取失败，请稍后重试',
+      'err_timeout': '图片生成超时，请稍后重试',
+      'err_unknown': '插件执行异常，请联系开发者',
+      'err_quota': 'AIFY 积分不足，请前往 https://aivip.link 充值后重试',
     },
     'en-US': {
       'promptLabel': 'Image Generation Prompt',
@@ -73,6 +83,16 @@ fieldDecoratorKit.setDecorator({
       'resolutionLabel': 'Resolution',
       'authorizationName': 'AIFY API Authorization',
       'authorizationTooltip': 'Visit https://aivip.link/dashboard/apikey to get your API Key.',
+      'err_fetch': 'Network request failed, please check your connection and retry',
+      'err_content': 'Content moderation failed, please revise your prompt',
+      'err_service': 'AI service error, please try again later',
+      'err_empty': 'Empty response from service, please try again later',
+      'err_generate': 'Image generation failed, please revise your prompt',
+      'err_no_task': 'Task creation failed, please try again later',
+      'err_no_url': 'Failed to retrieve image URL, please try again later',
+      'err_timeout': 'Image generation timed out, please try again later',
+      'err_unknown': 'Plugin execution error, please contact the developer',
+      'err_quota': 'Insufficient AIFY credits, please recharge at https://aivip.link',
     },
     'ja-JP': {
       'promptLabel': '画像生成プロンプト',
@@ -82,7 +102,30 @@ fieldDecoratorKit.setDecorator({
       'resolutionLabel': '解像度',
       'authorizationName': 'AIFY API 認証',
       'authorizationTooltip': 'https://aivip.link/dashboard/apikey でAPIキーを取得してください。',
+      'err_fetch': 'ネットワークエラー、接続を確認してから再試行してください',
+      'err_content': 'コンテンツ審査不通過、プロンプトを修正してください',
+      'err_service': 'AIサービスエラー、しばらくしてから再試行してください',
+      'err_empty': 'サービスの応答が空です、後でもう一度お試しください',
+      'err_generate': '画像生成失敗、プロンプトを修正してください',
+      'err_no_task': 'タスク作成失敗、後でもう一度お試しください',
+      'err_no_url': '画像URL取得失敗、後でもう一度お試しください',
+      'err_timeout': '画像生成タイムアウト、後でもう一度お試しください',
+      'err_unknown': 'プラグイン実行エラー、開発者にお問い合わせください',
+      'err_quota': 'AIFYのポイントが不足しています、https://aivip.link でチャージしてください',
     },
+  },
+  // 用户可见的错误信息映射（errorMessage 对应的展示文案）
+  errorMessages: {
+    err_fetch: t('err_fetch'),
+    err_content: t('err_content'),
+    err_service: t('err_service'),
+    err_empty: t('err_empty'),
+    err_generate: t('err_generate'),
+    err_no_task: t('err_no_task'),
+    err_no_url: t('err_no_url'),
+    err_timeout: t('err_timeout'),
+    err_unknown: t('err_unknown'),
+    err_quota: t('err_quota'),
   },
   // 授权配置：Bearer Token 模式
   authorizations: {
@@ -156,9 +199,9 @@ fieldDecoratorKit.setDecorator({
       validator: { required: false },
     },
   ],
-  // 返回附件类型（图片）
+  // 返回链接类型（图片直链，绕过 COS 防盗链限制）
   resultType: {
-    type: FieldType.Attachment,
+    type: FieldType.Link,
   },
   // 执行函数
   execute: async (context, formData: {
@@ -259,23 +302,36 @@ fieldDecoratorKit.setDecorator({
         const errType = (invokeResp as any)._errorType;
         const errDetail = invokeResp.error;
         if (errDetail?.status === 429) {
-          return { code: FieldExecuteCode.RateLimit, msg: '===请求频率超限' };
+          return { code: FieldExecuteCode.RateLimit };
         }
-        return { code: FieldExecuteCode.Error, msg: `===请求失败(${errType}): ${errDetail?.message || errDetail?.statusText || '未知错误'}` };
+        return {
+          code: FieldExecuteCode.Error,
+          errorMessage: 'err_fetch',
+          extra: { type: errType, detail: String(errDetail?.message || errDetail?.statusText || '') },
+        };
       }
 
       // 处理业务错误码
-      if (invokeResp.code === 40001) {
-        return { code: FieldExecuteCode.QuotaExhausted, msg: '===积分不足，请充值后重试' };
+      // 40001 / 300202 均为积分不足
+      if (invokeResp.code === 40001 || invokeResp.code === 300202) {
+        return { code: FieldExecuteCode.Error, errorMessage: 'err_quota' };
       }
       if (invokeResp.code === 40003) {
-        return { code: FieldExecuteCode.Error, msg: `===内容审核未通过: ${invokeResp.message || '提示词包含敏感内容'}` };
+        return {
+          code: FieldExecuteCode.Error,
+          errorMessage: 'err_content',
+          extra: { detail: invokeResp.message || '' },
+        };
       }
       if (invokeResp.code !== 0) {
-        return { code: FieldExecuteCode.Error, msg: `===服务调用失败: code=${invokeResp.code}, ${invokeResp.message || '未知错误'}` };
+        return {
+          code: FieldExecuteCode.Error,
+          errorMessage: 'err_service',
+          extra: { code: String(invokeResp.code), detail: invokeResp.message || '' },
+        };
       }
       if (!invokeResp.data) {
-        return { code: FieldExecuteCode.Error, msg: '===响应数据为空' };
+        return { code: FieldExecuteCode.Error, errorMessage: 'err_empty' };
       }
 
       // ==================== 5. 提取结果或轮询 ====================
@@ -294,18 +350,23 @@ fieldDecoratorKit.setDecorator({
           debugLog({ '直接返回成功': { resultUrl, cost: invokeResp.data.cost } });
           return {
             code: FieldExecuteCode.Success,
-            data: [{ fileName: `nanobanana2_${Date.now()}.png`, type: 'image', url: resultUrl }],
+            data: { text: 'AI生成图片', link: resultUrl },
           };
         }
+        return { code: FieldExecuteCode.Error, errorMessage: 'err_no_url' };
       }
 
       if (status === 'failed') {
-        return { code: FieldExecuteCode.Error, msg: `===图片生成失败: ${invokeResp.data.error_msg || invokeResp.data.error_message || '未知错误'}` };
+        return {
+          code: FieldExecuteCode.Error,
+          errorMessage: 'err_generate',
+          extra: { detail: invokeResp.data.error_msg || invokeResp.data.error_message || '' },
+        };
       }
 
       // 需要轮询（pending/processing）
       if (!taskId) {
-        return { code: FieldExecuteCode.Error, msg: '===任务ID为空，无法查询状态' };
+        return { code: FieldExecuteCode.Error, errorMessage: 'err_no_task' };
       }
 
       debugLog({ '开始轮询': { taskId, currentStatus: status } });
@@ -330,6 +391,10 @@ fieldDecoratorKit.setDecorator({
         }
 
         if (taskResp.code !== 0 || !taskResp.data) {
+          // 轮询期间遇到积分不足，立即终止
+          if (taskResp.code === 40001 || taskResp.code === 300202) {
+            return { code: FieldExecuteCode.Error, errorMessage: 'err_quota' };
+          }
           debugLog({ [`轮询#${i + 1}响应异常`]: { code: taskResp.code } });
           continue;
         }
@@ -342,14 +407,18 @@ fieldDecoratorKit.setDecorator({
             debugLog({ '轮询成功': { resultUrl, cost: taskResp.data.cost, attempt: i + 1 } });
             return {
               code: FieldExecuteCode.Success,
-              data: [{ fileName: `nanobanana2_${Date.now()}.png`, type: 'image', url: resultUrl }],
+              data: { text: 'AI生成图片', link: resultUrl },
             };
           }
-          return { code: FieldExecuteCode.Error, msg: '===任务完成但未返回图片URL' };
+          return { code: FieldExecuteCode.Error, errorMessage: 'err_no_url' };
         }
 
         if (taskStatus === 'failed') {
-          return { code: FieldExecuteCode.Error, msg: `===图片生成失败: ${taskResp.data.error_msg || taskResp.data.error_message || '未知错误'}` };
+          return {
+            code: FieldExecuteCode.Error,
+            errorMessage: 'err_generate',
+            extra: { detail: taskResp.data.error_msg || taskResp.data.error_message || '' },
+          };
         }
 
         // pending/processing 继续轮询
@@ -358,11 +427,19 @@ fieldDecoratorKit.setDecorator({
         }
       }
 
-      return { code: FieldExecuteCode.Error, msg: `===生成超时: 已等待${(maxAttempts * pollInterval) / 1000}秒，请稍后重试` };
+      return {
+        code: FieldExecuteCode.Error,
+        errorMessage: 'err_timeout',
+        extra: { waited: `${(maxAttempts * pollInterval) / 1000}s` },
+      };
 
     } catch (e: any) {
-      console.log('====error', String(e));
-      return { code: FieldExecuteCode.Error, msg: `===捷径执行异常: ${e?.message || String(e)}` };
+      debugLog({ '===异常错误': { message: e?.message, stack: e?.stack?.slice(0, 500) } });
+      return {
+        code: FieldExecuteCode.Error,
+        errorMessage: 'err_unknown',
+        extra: { detail: e?.message || String(e) },
+      };
     }
   },
 });
