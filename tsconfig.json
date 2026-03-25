@@ -11,7 +11,8 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "lib": [
-      "ES2020"
+      "ES2020",
+      "DOM"
     ],
     "allowJs": true,
     "checkJs": true
